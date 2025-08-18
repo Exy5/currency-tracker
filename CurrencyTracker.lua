@@ -244,8 +244,6 @@ function CT:UpdateCurrencyData()
     if mainFrame and mainFrame:IsVisible() then
         self:UpdateDisplay()
     end
-    
-    print("|cffffff00[CT]:|r Currency data updated for " .. charKey)
 end
 
 -- Create the main tracking frame
@@ -288,7 +286,7 @@ function CT:CreateMainFrame()
     refreshButton:SetScript("OnClick", function()
         CT:UpdateCurrencyData()
         CT:UpdateDisplay()
-        print("|cffffff00[CT]:|r Currency data refreshed.")
+        print("|cffffff00[CT]:|r Currency data refreshed for " .. charKey)
     end)
 
     -- Content frame
