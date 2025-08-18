@@ -1,0 +1,8 @@
+## Interface: 50400
+## Title: Currency Tracker
+## Notes: Track Justice, Valor, Conquest and Honor Points across all characters
+## Author: Exyst - Lakeshire
+## Version: 1.0.0
+## SavedVariables: CurrencyTrackerDB
+
+CurrencyTracker.lua
