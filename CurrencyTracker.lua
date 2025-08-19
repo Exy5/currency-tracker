@@ -1,6 +1,4 @@
 -- TODO's
--- * OPTIONS MENU
--- * change calls to /ct show, /ct options, /ct debug
 -- * POSSIBLY MORE CURRENCIES TO TRACK
 
 local addonName = "CurrencyTracker"
@@ -41,7 +39,9 @@ CT.db = {}
 
 -- Main frame
 local mainFrame = nil
+local optionsFrame = nil
 local isFrameVisible = false
+local isOptionsVisible = false
 
 -- Event frame for handling events
 local eventFrame = CreateFrame("Frame")
@@ -59,7 +59,7 @@ function CT:OnLoad()
     SLASH_CURRENCYTRACKER1 = Constants.Commands.COMMAND_CT_ABBR
     SLASH_CURRENCYTRACKER2 = Constants.Commands.COMMAND_CT_FULLNAME
     SlashCmdList[Constants.Commands.HEADER_CT_MAIN] = function(msg)
-        CT:ToggleFrame()
+        CT:HandleChatCommand(msg)
     end
 
     -- Debug command to test currency APIs
@@ -68,21 +68,39 @@ function CT:OnLoad()
         CT:DebugCurrencyAPI()
     end
 
-    SLASH_CTOPTIONS = Constants.Commands.COMMAND_CT_OPTIONS
-    SlashCmdList[Constants.Commands.HEADER_CT_OPTIONS] = function(msg)
-        -- currently not implemented - should open options window with clickable entries for currencies
-    end
-
     -- Set up periodic update timer ( every 30 seconds)
     updateTimer = C_Timer.NewTicker(30, function()
         CT:UpdateCurrencyData()
     end)
 end
 
--- Debug purposes to show the info for Valor Points (id: 396)
+-- Handle chat commands with subcommands
+function CT:HandleChatCommand(msg)
+    local command = string.lower(string.trim(msg or ""))
+    
+    if command == "" then
+        -- Show help
+        print("|cffffff00[CT]:|r Currency Tracker Commands:")
+        print("  |cff00ff00/ct show|r - Toggle currency window")
+        print("  |cff00ff00/ct hide|r - Close currency window")
+        print("  |cff00ff00/ct options|r - Open options window")
+        print("  |cff00ff00/ctdebug|r - Debug currency API")
+    elseif command == "show" then
+        CT:ToggleFrame()
+    elseif command == "hide" then
+        CT:HideFrame()
+    elseif command == "options" then
+        CT:ToggleOptionsFrame()
+    else
+        print("|cffffff00[CT]:|r Unknown command: " .. command)
+        print("  Type |cff00ff00/ct|r for available commands")
+    end
+end
+
+-- Debug purposes to show the info for Elder Charms (id: 697)
 function CT:DebugCurrencyAPI()
     local currencyID = 697 -- Elder Charms of Good Fortune
-    print("=== Debug for Valor Points - CurrencyID: " .. currencyID)
+    print("=== Debug for Elder Charms - CurrencyID: " .. currencyID)
     local info = self:GetCurrencyInfoCompat(currencyID)
     if not info then
         print("GetCurrencyInfo failed")
@@ -103,9 +121,23 @@ function CT:OnEvent(event, ...)
         if loadedAddon == addonName then
             -- Initialize saved variables
             if not CurrencyTrackerDB then
-                CurrencyTrackerDB = {}
+                CurrencyTrackerDB = {
+                    enabledCurrencies = {} -- Track which currencies are enabled
+                }
+                -- Set all currencies enabled by default
+                for _, currency in ipairs(CURRENCIES) do
+                    CurrencyTrackerDB.enabledCurrencies[currency.id] = true
+                end
             end
             CT.db = CurrencyTrackerDB
+            
+            -- Ensure enabledCurrencies exists for existing databases
+            if not CT.db.enabledCurrencies then
+                CT.db.enabledCurrencies = {}
+                for _, currency in ipairs(CURRENCIES) do
+                    CT.db.enabledCurrencies[currency.id] = true
+                end
+            end
         end
     elseif event == Constants.Events.PLAYER_LOGIN then
         -- Update currency data when player logs in
@@ -114,11 +146,17 @@ function CT:OnEvent(event, ...)
         if not mainFrame then
             CT:CreateMainFrame()
         end
+        if not optionsFrame then
+            CT:CreateOptionsFrame()
+        end
     elseif event == Constants.Events.PLAYER_ENTERING_WORLD then
         -- Update currency data when player enters world (silent)
         CT:UpdateCurrencyData()
         if not mainFrame then
             CT:CreateMainFrame()
+        end
+        if not optionsFrame then
+            CT:CreateOptionsFrame()
         end
     elseif event == Constants.Events.CURRENCY_DISPLAY_UPDATE or event == Constants.Events.CHAT_MSG_CURRENCY then
         -- Update currencies change
@@ -126,6 +164,24 @@ function CT:OnEvent(event, ...)
         if mainFrame and mainFrame:IsVisible() then
             CT:UpdateDisplay()
         end
+    end
+end
+
+-- Check if a currency is enabled in options
+function CT:IsCurrencyEnabled(currencyId)
+    return CT.db.enabledCurrencies and CT.db.enabledCurrencies[currencyId]
+end
+
+-- Set currency enabled/disabled state
+function CT:SetCurrencyEnabled(currencyId, enabled)
+    if not CT.db.enabledCurrencies then
+        CT.db.enabledCurrencies = {}
+    end
+    CT.db.enabledCurrencies[currencyId] = enabled
+    
+    -- Update main display if visible
+    if mainFrame and mainFrame:IsVisible() then
+        CT:UpdateDisplay()
     end
 end
 
@@ -193,9 +249,10 @@ end
 
 -- Flush database and reset to original state
 function CT:FlushDatabase()
-    -- Clear the database
-    CT.db = {}
-    CurrencyTrackerDB = {}
+    -- Clear the database but preserve enabled currencies
+    local enabledCurrencies = CT.db.enabledCurrencies
+    CT.db = { enabledCurrencies = enabledCurrencies }
+    CurrencyTrackerDB = CT.db
     
     -- Update display
     if mainFrame and mainFrame:IsVisible() then
@@ -246,6 +303,105 @@ function CT:UpdateCurrencyData()
     end
 end
 
+-- Create the options frame
+function CT:CreateOptionsFrame()
+    if optionsFrame then return end
+
+    -- Calculate dynamic height based on number of currencies
+    local numCurrencies = #CURRENCIES
+    local titleHeight = 40        -- Space for title and instructions
+    local checkboxHeight = 30     -- Height per checkbox entry
+    local padding = 30            -- Bottom padding
+    
+    local dynamicHeight = titleHeight + (numCurrencies * checkboxHeight) + padding
+    
+    optionsFrame = CreateFrame("Frame", "CurrencyTrackerOptionsFrame", UIParent, "BackdropTemplate")
+    optionsFrame:SetSize(300, dynamicHeight)
+    optionsFrame:SetPoint("CENTER", 0, 0)
+    optionsFrame:SetFrameStrata("DIALOG")  -- Higher strata than main frame
+    optionsFrame:SetFrameLevel(100)        -- High frame level within the strata
+    optionsFrame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 8, right = 8, top = 8, bottom = 8 },
+    })
+    optionsFrame:SetMovable(true)
+    optionsFrame:EnableMouse(true)
+    optionsFrame:RegisterForDrag("LeftButton")
+    optionsFrame:SetScript("OnDragStart", optionsFrame.StartMoving)
+    optionsFrame:SetScript("OnDragStop", optionsFrame.StopMovingOrSizing)
+    optionsFrame:Hide()
+
+    -- Title
+    local title = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -15)
+    title:SetText("Currency Tracker Options")
+
+    -- Close button
+    local closeButton = CreateFrame("Button", nil, optionsFrame, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", -5, -5)
+    closeButton:SetScript("OnClick", function()
+        CT:ToggleOptionsFrame()
+    end)
+
+    -- Instructions
+    local instructions = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    instructions:SetPoint("TOP", title, "BOTTOM", 0, -10)
+    instructions:SetText("Select currencies to track:")
+
+    -- Create checkboxes for each currency
+    local yOffset = -60
+    optionsFrame.checkboxes = {}
+    
+    for i, currency in ipairs(CURRENCIES) do
+        local checkbox = CreateFrame("CheckButton", "CTOptionsCheckbox" .. i, optionsFrame, "UICheckButtonTemplate")
+        checkbox:SetPoint("TOPLEFT", 20, yOffset)
+        checkbox:SetSize(20, 20)
+        
+        -- Set initial state
+        checkbox:SetChecked(CT:IsCurrencyEnabled(currency.id))
+        
+        -- Currency icon
+        local icon = checkbox:CreateTexture(nil, "OVERLAY")
+        local currencyInfo = self:GetCurrencyInfo(currency.id)
+        if currencyInfo and currencyInfo.iconFileID then
+            icon:SetTexture(currencyInfo.iconFileID)
+        else
+            -- Fallback icons
+            if currency.name == "Justice Points" then
+                icon:SetTexture("Interface\\Icons\\spell_holy_championsbond")
+            elseif currency.name == "Valor Points" then
+                icon:SetTexture("Interface\\Icons\\spell_holy_proclaimchampion_02")
+            elseif currency.name == "Conquest Points" then
+                icon:SetTexture("Interface\\Icons\\ability_pvp_gladiatormedallion")
+            elseif currency.name == "Honor Points" then
+                icon:SetTexture("Interface\\Icons\\ability_warrior_victoryrush")
+            end
+        end
+        icon:SetSize(16, 16)
+        icon:SetPoint("LEFT", checkbox, "RIGHT", 5, 0)
+        
+        -- Currency label
+        local label = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+        label:SetText(currency.name)
+        
+        -- Store currency ID with checkbox for reference
+        checkbox.currencyId = currency.id
+        
+        -- Set click handler
+        checkbox:SetScript("OnClick", function(self)
+            CT:SetCurrencyEnabled(self.currencyId, self:GetChecked())
+        end)
+        
+        -- Store reference for later access
+        optionsFrame.checkboxes[currency.id] = checkbox
+        
+        yOffset = yOffset - 30
+    end
+end
+
 -- Create the main tracking frame
 function CT:CreateMainFrame()
     if mainFrame then return end
@@ -269,29 +425,39 @@ function CT:CreateMainFrame()
     -- Title
     local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
-    title:SetText("Currency Tracker v1.0.0")
+    title:SetText("Currency Tracker v1.1.0")
 
     -- Close button
     local closeButton = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", -5, -5)
     closeButton:SetScript("OnClick", function()
-        CT:ToggleFrame()
+        CT:HideFrame()
+    end)
+
+    -- Options button
+    local optionsButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
+    optionsButton:SetSize(80, 20)
+    optionsButton:SetPoint("TOPRIGHT", closeButton, "BOTTOMRIGHT", -15, 0)
+    optionsButton:SetText("Options")
+    optionsButton:SetScript("OnClick", function()
+        CT:ToggleOptionsFrame()
     end)
 
     -- Refresh button
     local refreshButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
     refreshButton:SetSize(80, 20)
-    refreshButton:SetPoint("TOPRIGHT", closeButton, "BOTTOMRIGHT", -15, 0)
+    refreshButton:SetPoint("TOPRIGHT", optionsButton, "TOPLEFT", -10, 0)
     refreshButton:SetText("Refresh")
     refreshButton:SetScript("OnClick", function()
         CT:UpdateCurrencyData()
         CT:UpdateDisplay()
+        local charKey = CT:GetCharacterKey()
         print("|cffffff00[CT]:|r Currency data refreshed for " .. charKey)
     end)
 
     -- Content frame
     local contentFrame = CreateFrame("ScrollFrame", nil, mainFrame)
-    contentFrame:SetPoint("TOPLEFT", 15, -65)  -- Adjusted for refresh button
+    contentFrame:SetPoint("TOPLEFT", 15, -65)  -- Adjusted for buttons
     contentFrame:SetPoint("BOTTOMRIGHT", -35, 15)
     
     local scrollChild = CreateFrame("Frame", nil, contentFrame)
@@ -359,102 +525,105 @@ function CT:UpdateDisplay()
 
     local yOffset = 0
 
-    -- Display currencies
+    -- Display only enabled currencies
     for _, currency in ipairs(CURRENCIES) do
-        -- Get currency info for icon
-        local currencyInfo = self:GetCurrencyInfo(currency.id)
-        local iconFileID = currencyInfo and currencyInfo.iconFileID
-        
-        -- Currency header with icon
-        local headerFrame = CreateFrame("Frame", nil, mainFrame.scrollChild)
-        headerFrame:SetPoint("TOPLEFT", 5, yOffset)
-        headerFrame:SetSize(300, 16)
-        
-        -- Currency icon (try iconFileID first, fallback to hardcoded paths)
-        local icon = headerFrame:CreateTexture(nil, "OVERLAY")
-        if iconFileID then
-            icon:SetTexture(iconFileID)
-        else
-            -- Fallback icons
-            if currency.name == "Justice Points" then
-                icon:SetTexture("Interface\\Icons\\spell_holy_championsbond")
-            elseif currency.name == "Valor Points" then
-                icon:SetTexture("Interface\\Icons\\spell_holy_proclaimchampion_02")
-            elseif currency.name == "Conquest Points" then
-                icon:SetTexture("Interface\\Icons\\ability_pvp_gladiatormedallion")
-            elseif currency.name == "Honor Points" then
-                icon:SetTexture("Interface\\Icons\\ability_warrior_victoryrush")
-            end
-        end
-        icon:SetSize(16, 16)
-        icon:SetPoint("LEFT", 0, 0)
-        
-        -- Currency name
-        local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        header:SetPoint("LEFT", icon, "RIGHT", 5, 0)
-        header:SetText("|cffffcc00" .. currency.name .. "|r")
-        
-        yOffset = yOffset - 20
-        
-        -- Character data for this currency
-        local sortedChars = {}
-        if self.db[currency.id] then
-            for charKey, data in pairs(self.db[currency.id]) do
-                local realm, name = charKey:match("(.+)-(.+)")
-                if realm and name then
-                    table.insert(sortedChars, {
-                        name = name,
-                        realm = realm,
-                        amount = data.amount or 0,
-                        totalEarned = data.totalEarned or 0,
-                        class = data.class,
-                        level = data.level
-                    })
+        -- Skip if currency is not enabled
+        if self:IsCurrencyEnabled(currency.id) then
+            -- Get currency info for icon
+            local currencyInfo = self:GetCurrencyInfo(currency.id)
+            local iconFileID = currencyInfo and currencyInfo.iconFileID
+            
+            -- Currency header with icon
+            local headerFrame = CreateFrame("Frame", nil, mainFrame.scrollChild)
+            headerFrame:SetPoint("TOPLEFT", 5, yOffset)
+            headerFrame:SetSize(300, 16)
+            
+            -- Currency icon (try iconFileID first, fallback to hardcoded paths)
+            local icon = headerFrame:CreateTexture(nil, "OVERLAY")
+            if iconFileID then
+                icon:SetTexture(iconFileID)
+            else
+                -- Fallback icons
+                if currency.name == "Justice Points" then
+                    icon:SetTexture("Interface\\Icons\\spell_holy_championsbond")
+                elseif currency.name == "Valor Points" then
+                    icon:SetTexture("Interface\\Icons\\spell_holy_proclaimchampion_02")
+                elseif currency.name == "Conquest Points" then
+                    icon:SetTexture("Interface\\Icons\\ability_pvp_gladiatormedallion")
+                elseif currency.name == "Honor Points" then
+                    icon:SetTexture("Interface\\Icons\\ability_warrior_victoryrush")
                 end
             end
-        end
-        
-        -- Sort alphabetically by character name
-        table.sort(sortedChars, function(a, b) return a.name < b.name end)
-        
-        if #sortedChars == 0 then
-            local noData = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            noData:SetPoint("TOPLEFT", 15, yOffset)
-            noData:SetText("|cff999999No characters with this currency|r")
-            yOffset = yOffset - 15
-        else
-            for _, char in ipairs(sortedChars) do
-                local classColor = RAID_CLASS_COLORS[char.class] or {r = 1, g = 1, b = 1}
-                local colorHex = string.format("%02x%02x%02x", 
-                    classColor.r * 255, classColor.g * 255, classColor.b * 255)
-                
-                -- Calculate global cap for this currency
-                local globalCap = self:GetGlobalCurrencyCap(currency)
-                
-                local charInfo = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                charInfo:SetPoint("TOPLEFT", 15, yOffset)
-                
-                local displayText
-                if currency.idIncrement then
-                    -- For Valor/Conquest Points, show: Character (Level) quantity (totalEarned/maxQuantity)
-                    if globalCap and globalCap > 0 then
-                        displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r/|cff00ff00%s|r)", 
-                            colorHex, char.name, char.level, char.amount, char.totalEarned, globalCap)
-                    else
-                        displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r)", 
-                            colorHex, char.name, char.level, char.amount, char.totalEarned)
+            icon:SetSize(16, 16)
+            icon:SetPoint("LEFT", 0, 0)
+            
+            -- Currency name
+            local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            header:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+            header:SetText("|cffffcc00" .. currency.name .. "|r")
+            
+            yOffset = yOffset - 20
+            
+            -- Character data for this currency
+            local sortedChars = {}
+            if self.db[currency.id] then
+                for charKey, data in pairs(self.db[currency.id]) do
+                    local realm, name = charKey:match("(.+)-(.+)")
+                    if realm and name then
+                        table.insert(sortedChars, {
+                            name = name,
+                            realm = realm,
+                            amount = data.amount or 0,
+                            totalEarned = data.totalEarned or 0,
+                            class = data.class,
+                            level = data.level
+                        })
                     end
-                else
-                    -- For Justice/Honor Points, show only: Character (Level) quantity
-                    displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r", 
-                        colorHex, char.name, char.level, char.amount)
                 end
-                charInfo:SetText(displayText)
-                yOffset = yOffset - 15
             end
+            
+            -- Sort alphabetically by character name
+            table.sort(sortedChars, function(a, b) return a.name < b.name end)
+            
+            if #sortedChars == 0 then
+                local noData = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                noData:SetPoint("TOPLEFT", 15, yOffset)
+                noData:SetText("|cff999999No characters with this currency|r")
+                yOffset = yOffset - 15
+            else
+                for _, char in ipairs(sortedChars) do
+                    local classColor = RAID_CLASS_COLORS[char.class] or {r = 1, g = 1, b = 1}
+                    local colorHex = string.format("%02x%02x%02x", 
+                        classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                    
+                    -- Calculate global cap for this currency
+                    local globalCap = self:GetGlobalCurrencyCap(currency)
+                    
+                    local charInfo = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    charInfo:SetPoint("TOPLEFT", 15, yOffset)
+                    
+                    local displayText
+                    if currency.idIncrement then
+                        -- For Valor/Conquest Points, show: Character (Level) quantity (totalEarned/maxQuantity)
+                        if globalCap and globalCap > 0 then
+                            displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r/|cff00ff00%s|r)", 
+                                colorHex, char.name, char.level, char.amount, char.totalEarned, globalCap)
+                        else
+                            displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r)", 
+                                colorHex, char.name, char.level, char.amount, char.totalEarned)
+                        end
+                    else
+                        -- For Justice/Honor Points, show only: Character (Level) quantity
+                        displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r", 
+                            colorHex, char.name, char.level, char.amount)
+                    end
+                    charInfo:SetText(displayText)
+                    yOffset = yOffset - 15
+                end
+            end
+            
+            yOffset = yOffset - 10 -- Extra space between currency sections
         end
-        
-        yOffset = yOffset - 10 -- Extra space between currency sections
     end
 
     -- Add timestamp at bottom
@@ -471,21 +640,59 @@ function CT:UpdateDisplay()
     end
 end
 
--- Toggle frame visibility
+-- Toggle main frame visibility
 function CT:ToggleFrame()
     if not mainFrame then
         self:CreateMainFrame()
     end
 
     if mainFrame:IsVisible() then
+        self:HideFrame()
+    else
+        self:ShowFrame()
+    end
+end
+
+-- Show main frame
+function CT:ShowFrame()
+    if not mainFrame then
+        self:CreateMainFrame()
+    end
+    
+    self:UpdateCurrencyData()
+    self:UpdateDisplay()
+    mainFrame:Show()
+    isFrameVisible = true
+end
+
+-- Hide main frame
+function CT:HideFrame()
+    if mainFrame then
         self:ClearDisplay() -- Clear content when hiding
         mainFrame:Hide()
         isFrameVisible = false
+    end
+end
+
+-- Toggle options frame visibility
+function CT:ToggleOptionsFrame()
+    if not optionsFrame then
+        self:CreateOptionsFrame()
+    end
+
+    if optionsFrame:IsVisible() then
+        optionsFrame:Hide()
+        isOptionsVisible = false
     else
-        self:UpdateCurrencyData()
-        self:UpdateDisplay()
-        mainFrame:Show()
-        isFrameVisible = true
+        -- Update checkbox states when opening
+        for _, currency in ipairs(CURRENCIES) do
+            local checkbox = optionsFrame.checkboxes[currency.id]
+            if checkbox then
+                checkbox:SetChecked(CT:IsCurrencyEnabled(currency.id))
+            end
+        end
+        optionsFrame:Show()
+        isOptionsVisible = true
     end
 end
 
