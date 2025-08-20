@@ -31,6 +31,9 @@ Constants = {
         COMMAND_CT_DEBUG = "/ctdebug",
         HEADER_CT_OPTIONS = "CTOPTIONS",
         COMMAND_CT_OPTIONS = "/ctoptions",
+    },
+    General = {
+        MIN_CHAR_LVL = 85
     }
 }
 
@@ -569,7 +572,8 @@ function CT:UpdateDisplay()
             if self.db[currency.id] then
                 for charKey, data in pairs(self.db[currency.id]) do
                     local realm, name = charKey:match("(.+)-(.+)")
-                    if realm and name then
+                    local level = data.level
+                    if realm and name and level >= Constants.General.MIN_CHAR_LVL then
                         table.insert(sortedChars, {
                             name = name,
                             realm = realm,
