@@ -21,19 +21,32 @@ Constants = {
         PLAYER_LOGIN = "PLAYER_LOGIN",
         CURRENCY_DISPLAY_UPDATE = "CURRENCY_DISPLAY_UPDATE",
         PLAYER_ENTERING_WORLD = "PLAYER_ENTERING_WORLD",
-        CHAT_MSG_CURRENCY = "CHAT_MSG_CURRENCY"
+        CHAT_MSG_CURRENCY = "CHAT_MSG_CURRENCY",
     },
     Commands = {
         HEADER_CT_MAIN = "CURRENCYTRACKER",
         COMMAND_CT_ABBR = "/ct",
         COMMAND_CT_FULLNAME = "/currencytracker",
+        COMMAND_CT_SHOW = "show",
+        COMMAND_CT_OPTIONS = "options",
+        COMMAND_CT_HIDE = "hide",
         HEADER_CT_DEBUG = "CTDEBUG",
         COMMAND_CT_DEBUG = "/ctdebug",
-        HEADER_CT_OPTIONS = "CTOPTIONS",
-        COMMAND_CT_OPTIONS = "/ctoptions",
     },
     General = {
         MIN_CHAR_LVL = 85
+    },
+    Text = {
+        HELP_HEADER = "|cffffff00[CT]:|r Currency Tracker Commands:",
+        HELP_SHOW = "  |cff00ff00/ct show|r - Toggle currency window",
+        HELP_HIDE = "  |cff00ff00/ct hide|r - Close currency window",
+        HELP_OPTIONS = "  |cff00ff00/ct options|r - Open options window",
+        HELP_DEBUG = "  |cff00ff00/ctdebug|r - Debug currency API",
+        HELP_UNKNOWN1 = "|cffffff00[CT]:|r Unknown command: ",
+        HELP_UNKNOWN2 = "  Type |cff00ff00/ct|r for available commands",
+        FLUSH = "|cffffff00[CT]:|r Database flushed and reset to original state.",
+        INITIALIZE = "|cffffff00[CT]:|r Initializing Currency Tracker data.",
+        REFRESH = "|cffffff00[CT]:|r Currency data refreshed for "
     }
 }
 
@@ -83,20 +96,20 @@ function CT:HandleChatCommand(msg)
     
     if command == "" then
         -- Show help
-        print("|cffffff00[CT]:|r Currency Tracker Commands:")
-        print("  |cff00ff00/ct show|r - Toggle currency window")
-        print("  |cff00ff00/ct hide|r - Close currency window")
-        print("  |cff00ff00/ct options|r - Open options window")
-        print("  |cff00ff00/ctdebug|r - Debug currency API")
-    elseif command == "show" then
+        print(Constants.Text.HELP_HEADER)
+        print(Constants.Text.HELP_SHOW)
+        print(Constants.Text.HELP_HIDE)
+        print(Constants.Text.HELP_OPTIONS)
+        print(Constants.Text.HELP_DEBUG)
+    elseif command == Constants.Commands.COMMAND_CT_SHOW then
         CT:ToggleFrame()
-    elseif command == "hide" then
+    elseif command == Constants.Commands.COMMAND_CT_HIDE then
         CT:HideFrame()
-    elseif command == "options" then
+    elseif command == Constants.Commands.COMMAND_CT_OPTIONS then
         CT:ToggleOptionsFrame()
     else
-        print("|cffffff00[CT]:|r Unknown command: " .. command)
-        print("  Type |cff00ff00/ct|r for available commands")
+        print(Constants.Text.HELP_UNKNOWN1 .. command)
+        print(Constants.Text.HELP_UNKNOWN2)
     end
 end
 
@@ -144,7 +157,7 @@ function CT:OnEvent(event, ...)
         end
     elseif event == Constants.Events.PLAYER_LOGIN then
         -- Update currency data when player logs in
-        print("|cffffff00[CT]:|r Initializing Currency Tracker data.")
+        print(Constants.Text.INITIALIZE)
         CT:UpdateCurrencyData()
         if not mainFrame then
             CT:CreateMainFrame()
@@ -256,13 +269,11 @@ function CT:FlushDatabase()
     local enabledCurrencies = CT.db.enabledCurrencies
     CT.db = { enabledCurrencies = enabledCurrencies }
     CurrencyTrackerDB = CT.db
-    
+    print(Constants.Text.FLUSH)
     -- Update display
     if mainFrame and mainFrame:IsVisible() then
         self:UpdateDisplay()
     end
-    
-    print("|cffffff00[CT]:|r Database flushed and reset to original state.")
 end
 
 -- Get the Character key for current character
@@ -455,7 +466,7 @@ function CT:CreateMainFrame()
         CT:UpdateCurrencyData()
         CT:UpdateDisplay()
         local charKey = CT:GetCharacterKey()
-        print("|cffffff00[CT]:|r Currency data refreshed for " .. charKey)
+        print(Constants.Text.REFRESH .. charKey)
     end)
 
     -- Content frame
@@ -478,7 +489,6 @@ function CT:CreateMainFrame()
     flushButton:SetScript("OnClick", function()
         CT:FlushDatabase()
         CT:UpdateDisplay()
-        print("|cffffff00[CT]:|r Currency data flushed.")
     end)
     
     -- Scrollbar
