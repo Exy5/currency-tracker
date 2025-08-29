@@ -11,7 +11,8 @@ local CURRENCIES = {
     {id = 390, name = "Conquest Points", idIncrement = true},
     {id = 1901, name = "Honor Points", idIncrement = false},
     {id = 697, name= "Elder Charm of Good Fortune", idIncrement = true},
-    {id = 738, name= "Lesser Charm of Good Fortune", idIncrement = false}
+    {id = 738, name= "Lesser Charm of Good Fortune", idIncrement = false},
+    {id = 3350, name = "August Stone Fragment", idIncrement = false}
 }
 
 -- global constants
