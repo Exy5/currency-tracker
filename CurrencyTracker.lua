@@ -12,7 +12,9 @@ local CURRENCIES = {
     {id = 1901, name = "Honor Points", idIncrement = false},
     {id = 697, name= "Elder Charm of Good Fortune", idIncrement = true},
     {id = 738, name= "Lesser Charm of Good Fortune", idIncrement = false},
-    {id = 3350, name = "August Stone Fragment", idIncrement = false}
+    {id = 3350, name = "August Stone Fragment", idIncrement = false},
+    {id = 752, name = "Mogu Rune of Fate", idIncrement = true},
+    {id = 3414, name = "August Stone Shard", idIncrement = false}
 }
 
 -- global constants
@@ -116,8 +118,8 @@ end
 
 -- Debug purposes to show the info for Elder Charms (id: 697)
 function CT:DebugCurrencyAPI()
-    local currencyID = 697 -- Elder Charms of Good Fortune
-    print("=== Debug for Elder Charms - CurrencyID: " .. currencyID)
+    local currencyID = 752 -- Elder Charms of Good Fortune
+    print("=== Debug for Mogu Rune of Fate - CurrencyID: " .. currencyID)
     local info = self:GetCurrencyInfoCompat(currencyID)
     if not info then
         print("GetCurrencyInfo failed")
@@ -257,6 +259,11 @@ end
 
 -- Get global currency cap from API (not calculated)
 function CT:GetGlobalCurrencyCap(currency)
+    -- Ensure currency and currency.id exist
+    if not currency or not currency.id then
+        return nil
+    end
+
     local currencyInfo = self:GetCurrencyInfo(currency.id)
     if currencyInfo and currencyInfo.maxQuantity and currencyInfo.maxQuantity > 0 then
         return currencyInfo.maxQuantity
@@ -281,26 +288,52 @@ end
 function CT:GetCharacterKey()
     local realm = GetRealmName()
     local player = UnitName("player")
+
+    -- Return nil if either realm or player is nil
+    if not realm or not player then
+        return nil
+    end
+
     return realm .. "-" .. player
 end
 
 -- Update currency data for current character
 function CT:UpdateCurrencyData()
     local charKey = self:GetCharacterKey()
-    
-    -- Get character info
-    local playerClass = select(2, UnitClass("player"))
+
+    -- Exit early if we can't get character key
+    if not charKey then
+        return
+    end
+
+    -- Get character info with nil checks
+    local _, playerClass = UnitClass("player")
     local playerLevel = UnitLevel("player")
-    
+
+    -- Exit early if essential character info is missing
+    if not playerClass or not playerLevel then
+        return
+    end
+
+    -- Ensure database exists
+    if not self.db then
+        return
+    end
+
     for _, currency in ipairs(CURRENCIES) do
+        -- Skip if currency is nil or missing ID
+        if not currency or not currency.id then
+            break
+        end
+
         local currencyInfo = self:GetCurrencyInfo(currency.id)
-        
+
         if currencyInfo and currencyInfo.quantity then
             -- Initialize currency structure if it doesn't exist
             if not self.db[currency.id] then
                 self.db[currency.id] = {}
             end
-            
+
             -- Store character data under currency ID
             self.db[currency.id][charKey] = {
                 amount = currencyInfo.quantity or 0,
@@ -311,7 +344,7 @@ function CT:UpdateCurrencyData()
             }
         end
     end
-    
+
     -- Force display update if frame is visible
     if mainFrame and mainFrame:IsVisible() then
         self:UpdateDisplay()
@@ -368,15 +401,20 @@ function CT:CreateOptionsFrame()
     -- Create checkboxes for each currency
     local yOffset = -60
     optionsFrame.checkboxes = {}
-    
+
     for i, currency in ipairs(CURRENCIES) do
+        -- Skip if currency is nil or missing required fields
+        if not currency or not currency.id or not currency.name then
+            break
+        end
+
         local checkbox = CreateFrame("CheckButton", "CTOptionsCheckbox" .. i, optionsFrame, "UICheckButtonTemplate")
         checkbox:SetPoint("TOPLEFT", 20, yOffset)
         checkbox:SetSize(20, 20)
-        
+
         -- Set initial state
         checkbox:SetChecked(CT:IsCurrencyEnabled(currency.id))
-        
+
         -- Currency icon
         local icon = checkbox:CreateTexture(nil, "OVERLAY")
         local currencyInfo = self:GetCurrencyInfo(currency.id)
@@ -396,23 +434,23 @@ function CT:CreateOptionsFrame()
         end
         icon:SetSize(16, 16)
         icon:SetPoint("LEFT", checkbox, "RIGHT", 5, 0)
-        
+
         -- Currency label
         local label = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("LEFT", icon, "RIGHT", 5, 0)
         label:SetText(currency.name)
-        
+
         -- Store currency ID with checkbox for reference
         checkbox.currencyId = currency.id
-        
+
         -- Set click handler
         checkbox:SetScript("OnClick", function(self)
             CT:SetCurrencyEnabled(self.currencyId, self:GetChecked())
         end)
-        
+
         -- Store reference for later access
         optionsFrame.checkboxes[currency.id] = checkbox
-        
+
         yOffset = yOffset - 30
     end
 end
@@ -541,17 +579,22 @@ function CT:UpdateDisplay()
 
     -- Display only enabled currencies
     for _, currency in ipairs(CURRENCIES) do
+        -- Skip if currency is nil or missing required fields
+        if not currency or not currency.id or not currency.name then
+            break
+        end
+
         -- Skip if currency is not enabled
         if self:IsCurrencyEnabled(currency.id) then
             -- Get currency info for icon
             local currencyInfo = self:GetCurrencyInfo(currency.id)
             local iconFileID = currencyInfo and currencyInfo.iconFileID
-            
+
             -- Currency header with icon
             local headerFrame = CreateFrame("Frame", nil, mainFrame.scrollChild)
             headerFrame:SetPoint("TOPLEFT", 5, yOffset)
             headerFrame:SetSize(300, 16)
-            
+
             -- Currency icon (try iconFileID first, fallback to hardcoded paths)
             local icon = headerFrame:CreateTexture(nil, "OVERLAY")
             if iconFileID then
@@ -570,36 +613,43 @@ function CT:UpdateDisplay()
             end
             icon:SetSize(16, 16)
             icon:SetPoint("LEFT", 0, 0)
-            
+
             -- Currency name
             local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             header:SetPoint("LEFT", icon, "RIGHT", 5, 0)
             header:SetText("|cffffcc00" .. currency.name .. "|r")
-            
+
             yOffset = yOffset - 20
-            
+
             -- Character data for this currency
             local sortedChars = {}
-            if self.db[currency.id] then
+            if self.db and self.db[currency.id] then
                 for charKey, data in pairs(self.db[currency.id]) do
-                    local realm, name = charKey:match("(.+)-(.+)")
-                    local level = data.level
-                    if realm and name and level >= Constants.General.MIN_CHAR_LVL then
-                        table.insert(sortedChars, {
-                            name = name,
-                            realm = realm,
-                            amount = data.amount or 0,
-                            totalEarned = data.totalEarned or 0,
-                            class = data.class,
-                            level = data.level
-                        })
+                    -- Ensure data is not nil and has required fields
+                    if data and type(data) == "table" and data.level then
+                        local realm, name = charKey:match("(.+)-(.+)")
+                        local level = data.level
+                        if realm and name and level and level >= Constants.General.MIN_CHAR_LVL then
+                            table.insert(sortedChars, {
+                                name = name,
+                                realm = realm,
+                                amount = data.amount or 0,
+                                totalEarned = data.totalEarned or 0,
+                                class = data.class,
+                                level = data.level
+                            })
+                        end
                     end
                 end
             end
-            
+
             -- Sort alphabetically by character name
-            table.sort(sortedChars, function(a, b) return a.name < b.name end)
-            
+            table.sort(sortedChars, function(a, b)
+                if not a or not a.name then return false end
+                if not b or not b.name then return true end
+                return a.name < b.name
+            end)
+
             if #sortedChars == 0 then
                 local noData = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 noData:SetPoint("TOPLEFT", 15, yOffset)
@@ -607,36 +657,39 @@ function CT:UpdateDisplay()
                 yOffset = yOffset - 15
             else
                 for _, char in ipairs(sortedChars) do
-                    local classColor = RAID_CLASS_COLORS[char.class] or {r = 1, g = 1, b = 1}
-                    local colorHex = string.format("%02x%02x%02x", 
-                        classColor.r * 255, classColor.g * 255, classColor.b * 255)
-                    
-                    -- Calculate global cap for this currency
-                    local globalCap = self:GetGlobalCurrencyCap(currency)
-                    
-                    local charInfo = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    charInfo:SetPoint("TOPLEFT", 15, yOffset)
-                    
-                    local displayText
-                    if currency.idIncrement then
-                        -- For Valor/Conquest Points, show: Character (Level) quantity (totalEarned/maxQuantity)
-                        if globalCap and globalCap > 0 then
-                            displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r/|cff00ff00%s|r)", 
-                                colorHex, char.name, char.level, char.amount, char.totalEarned, globalCap)
+                    -- Ensure char is not nil and has required fields
+                    if char and char.name and char.level and char.class then
+                        local classColor = (RAID_CLASS_COLORS and RAID_CLASS_COLORS[char.class]) or {r = 1, g = 1, b = 1}
+                        local colorHex = string.format("%02x%02x%02x",
+                            classColor.r * 255, classColor.g * 255, classColor.b * 255)
+
+                        -- Calculate global cap for this currency
+                        local globalCap = self:GetGlobalCurrencyCap(currency)
+
+                        local charInfo = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        charInfo:SetPoint("TOPLEFT", 15, yOffset)
+
+                        local displayText
+                        if currency.idIncrement then
+                            -- For Valor/Conquest Points, show: Character (Level) quantity (totalEarned/maxQuantity)
+                            if globalCap and globalCap > 0 then
+                                displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r/|cff00ff00%s|r)",
+                                    colorHex, char.name, char.level, char.amount, char.totalEarned, globalCap)
+                            else
+                                displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r)",
+                                    colorHex, char.name, char.level, char.amount, char.totalEarned)
+                            end
                         else
-                            displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r (|cffffff00%s|r)", 
-                                colorHex, char.name, char.level, char.amount, char.totalEarned)
+                            -- For Justice/Honor Points, show only: Character (Level) quantity
+                            displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r",
+                                colorHex, char.name, char.level, char.amount)
                         end
-                    else
-                        -- For Justice/Honor Points, show only: Character (Level) quantity
-                        displayText = string.format("|cff%s%s|r (%d): |cffffffff%s|r", 
-                            colorHex, char.name, char.level, char.amount)
+                        charInfo:SetText(displayText)
+                        yOffset = yOffset - 15
                     end
-                    charInfo:SetText(displayText)
-                    yOffset = yOffset - 15
                 end
             end
-            
+
             yOffset = yOffset - 10 -- Extra space between currency sections
         end
     end
@@ -650,8 +703,11 @@ function CT:UpdateDisplay()
     -- Update scroll range
     local contentHeight = math.abs(yOffset)
     mainFrame.scrollChild:SetHeight(math.max(contentHeight, 1))
-    if mainFrame.scrollBar then
-        mainFrame.scrollBar:SetMinMaxValues(0, math.max(0, contentHeight - mainFrame.contentFrame:GetHeight()))
+    if mainFrame.scrollBar and mainFrame.contentFrame then
+        local frameHeight = mainFrame.contentFrame:GetHeight()
+        if frameHeight then
+            mainFrame.scrollBar:SetMinMaxValues(0, math.max(0, contentHeight - frameHeight))
+        end
     end
 end
 
