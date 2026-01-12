@@ -697,7 +697,7 @@ function CT:UpdateDisplay()
     -- Add timestamp at bottom
     local timestamp = mainFrame.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     timestamp:SetPoint("TOPLEFT", 5, yOffset - 10)
-    timestamp:SetText("|cff888888Last updated: " .. date("%H:%M:%S") .. "|r")
+    timestamp:SetText("|cff888888Last updated: " .. date("%H:%M:%S") .. " - Made by Aexys|r")
     yOffset = yOffset - 25
 
     -- Update scroll range
