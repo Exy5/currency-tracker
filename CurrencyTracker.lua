@@ -89,7 +89,10 @@ function CT:OnLoad()
 
     -- Set up periodic update timer ( every 30 seconds)
     updateTimer = C_Timer.NewTicker(30, function()
-        CT:UpdateCurrencyData()
+        -- Only update if player is not in combat and unit exists
+        if not InCombatLockdown() and UnitExists("player") then
+            CT:UpdateCurrencyData()
+        end
     end)
 end
 
@@ -366,8 +369,8 @@ function CT:CreateOptionsFrame()
     optionsFrame = CreateFrame("Frame", "CurrencyTrackerOptionsFrame", UIParent, "BackdropTemplate")
     optionsFrame:SetSize(300, dynamicHeight)
     optionsFrame:SetPoint("CENTER", 0, 0)
-    optionsFrame:SetFrameStrata("DIALOG")  -- Higher strata than main frame
-    optionsFrame:SetFrameLevel(100)        -- High frame level within the strata
+    optionsFrame:SetFrameStrata("HIGH")  -- Use HIGH instead of DIALOG to avoid blocking system dialogs
+    optionsFrame:SetFrameLevel(10)       -- Reduced from 100 to avoid conflicts
     optionsFrame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -462,6 +465,7 @@ function CT:CreateMainFrame()
     mainFrame = CreateFrame("Frame", "CurrencyTrackerFrame", UIParent, "BackdropTemplate")
     mainFrame:SetSize(350, 400)
     mainFrame:SetPoint("CENTER", 0, 0)
+    mainFrame:SetFrameStrata("MEDIUM")  -- Explicitly set to MEDIUM to avoid conflicts
     mainFrame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
